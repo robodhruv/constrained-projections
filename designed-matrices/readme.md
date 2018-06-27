@@ -1,0 +1,3 @@
+This folder contains sample designed matrices incorporating optical constraints. The subfolders represent different design strategies - minimizing coherence (`coherence-opt`) or MMSE (`mmse-opt`). Matrices designed to minimize coherence use the method discussed in section 3. The matrices are designed for a block-wise reconstruction, with block size 16x16. The matrices have been designed for M = {32, 64, 96, 128}.
+
+Note that the starting point of each designed matrix, for a given value of M, is the same, whose entries were sampled from a uniform random distribution in Matlab R2015b, with the random number generated seeded with 40.

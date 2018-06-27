@@ -1,0 +1,1 @@
+This folder contains results of MMSE based design of sensing matrices as discussed in section 4.
