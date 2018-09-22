@@ -21,21 +21,30 @@ if nargin < 7
     for i = 1:comp
         S = sigma(:, :, i);
         S_inv(:, :, i) = inv(S);
-        S_det_log(i) = log(det(S));
+        % S_det_log(i) = log(det(S));
+        [~, D] = eig(S);
+        S_det_log(i) = sum(log(diag(D)));
         premult(:, :, i) = S * phi' / (((phi * S * phi')  + (eye(size(phi, 1)) * (noise.^2))));
     end
 end
 
 dec_x = zeros(size(phi, 2), comp);
 neg_log_apost = zeros(comp, 1);
+if (mean == 0)
+    % Placeholder for mean not available
+    mu = ones([size(dec_x, 1), 1]) * y(end);
+end
 
 for i = 1:comp
     % Calculating the MAP estimate for each component Gaussian
-    mu = mean(:, i);
+    if (mean ~= 0)
+        % Using mean of learned mixture components
+        mu = mean(:, i);
+    end
     dec_x(:, i) = mu + premult(:, :, i) * (y - (phi * mu));
     x_hat = dec_x(:, i) - mu;
-    neg_log_apost(i) = S_det_log(i) + x_hat' * S_inv(:, :, i) * x_hat;
+    neg_log_apost(i) = sum((y - phi*dec_x(:, i)).^2) + noise^2 * (S_det_log(i) + x_hat' * S_inv(:, :, i) * x_hat);
 end
 
-[min_err, ind] = min(neg_log_apost);
+[~, ind] = min(neg_log_apost);
 x = dec_x(:, ind);

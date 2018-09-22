@@ -8,10 +8,12 @@ addpath('../misc');
 
 rng(1);
 patch_dim = 16;
-load('../gmm-train/results/trained_model.mat');
+gmm_comp = 25; % Choose from {25, 100} or your own model
+
+load(strcat('../gmm-train/results/trained_model_', num2str(gmm_comp), '.mat'));
 
 % Choose image from `<base>/datasets/` or use your own
-img_path = '../datasets/bsds_minib_test/201080.jpg'
+img_path = '../datasets/bsds_minib_test/288024.jpg';
 
 I = imread(img_path);
 I = im2double(rgb2gray(I));
@@ -20,16 +22,22 @@ I = I(1:uint16(img_dim(1)/16)*16, 1:uint16(img_dim(2)/16)*16);
 patches = get_patches(I, 0, patch_dim, 'exhaustive')';
 num_patches = size(patches, 2);
 M = 32;
-mu = model_gmm.mu;
+% mu = 0;
+% sigma = GMM.covs;
+% w = GMM.mixweights;
 sigma = model_gmm.Sigma;
+mu = 0;
+% mu = model_gmm.mu;
+w = model_gmm.w;
 comp = size(sigma, 3);
 
 % Pre-allocating matrices
-premult = zeros([patch_dim^2, M, comp]);
+premult = zeros([patch_dim^2, M+1, comp]);
 rmse = zeros([num_patches, 4]);
 recon = zeros([patch_dim^2, num_patches, 4]);
+id_logger = zeros([num_patches, 2]);
 sig_inv = zeros(size(sigma));
-sig_det_log = zeros(size(sigma, 3));
+sig_det_log = zeros([size(sigma, 3), 1]);
 noise_lev = 0.01; % Noise STD fraction
 
 
@@ -38,18 +46,20 @@ psi = kron(dctmtx(patch_dim)', dctmtx(patch_dim)');
 % psi = kron(haarmtx(patch_dim)', haarmtx(patch_dim)');
 load(strcat('../designed-matrices/coherence-opt/2ddct/projected/coherence-opt-16-M', num2str(M), '.mat'));
 phi_sanei_org = phi_org; phi_sanei_con = phi_con;
-load(strcat('../designed-matrices/mmse-opt/mmse-opt-M', num2str(M), '.mat'));
+
+load(strcat('../designed-matrices/mmse-opt/', num2str(gmm_comp), '/mmse-opt-M', num2str(M), '.mat'));
 phi_mmse_org = phi_org; phi_mmse_con = phi_con;
 
 tic;
 for id = 1:4
     if (id==1 || id==3)
-        phi_c = phi_org; % phi_mmse_org = phi_sanei_org;
+        phi_c = phi_org;
     elseif (id==2)
         phi_c = phi_sanei_con;
     elseif (id==4)
         phi_c = phi_mmse_con;
     end
+    phi_c = vertcat(phi_c, ones([1, size(phi_c, 2)]) / size(phi_c, 2));
     if (id==1 || id==2)
         % L1 recovery
         disp(strcat('ID: ', num2str(id)))
@@ -60,7 +70,7 @@ for id = 1:4
         
         for i = [1:size(patches, 2)]
             x = patches(:, i);
-            y = phi_c * x + (randn(M, 1) * sigma_n);
+            y = phi_c * x + (randn(M+1, 1) * sigma_n);
 
         % Choose package for L1 recovery
             % CVX
@@ -93,14 +103,20 @@ for id = 1:4
         for i = 1:comp
             S = sigma(:, :, i);
             sig_inv(:, :, i) = inv(S);
-            sig_det_log(i) = log(det(S));
+            % sig_det_log(i) = log(det(S));
+            [V, D] = eig(S);
+            sig_det_log(i) = sum(log(diag(D)));
             premult(:, :, i) = S * phi_c' / (((phi_c * S * phi_c')  + (eye(size(phi_c, 1)) * (sigma_n.^2))));
         end
         for i = 1:num_patches
 %             disp(strcat('Patch:', num2str(i)))
             x = patches(:, i);
-            y = phi_c * x + (randn(M, 1) * sigma_n);
-            [dec_x, id_dec] = pwl_decoder(y, phi_c, sigma, mu, comp, sigma_n, sig_det_log, sig_inv, premult);
+            y = phi_c * x + (randn(M+1, 1) * sigma_n);
+            
+            % Choose a decoder
+%             [dec_x, id_dec] = pwl_decoder(y, phi_c, sigma, mu, comp, sigma_n, sig_det_log, sig_inv, premult);
+            [dec_x, id_dec] = aMAP_decoder(y, phi_c, w, sigma, mu, comp, sigma_n, premult);
+            id_logger(i, id-2) = id_dec;
             recon(:, i, id) = dec_x;
             rmse(i, id) = min(mean((dec_x - x).^2) / mean(x.^2), 1.0);
         end
